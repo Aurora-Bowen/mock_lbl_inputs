@@ -152,3 +152,9 @@ configuration is the GENIE option of haowei-physics/gundam_lbl_config
 - The MaCCQE knot range is still under discussion.
 - Interpolation was checked only on the manifest sample numu_x_numu_fhc; the antineutrino manifest samples (numubar_x_*, nuebar_x_*) in particular have not been checked.
 - CCQEPauliSupViaKF has a step response, so a 5-knot interpolation cannot follow it exactly between knots.
+
+## DUNE (in progress)
+
+DUNE TDR flux and far-detector response inputs (arXiv:2103.04797v2) are being
+added under `lbl_config/dune/`; see [lbl_config/dune/README.md](lbl_config/dune/README.md)
+for their source, units and status.
