@@ -258,8 +258,69 @@ column and would be lost.
 
 ## Splines
 
-`scripts/dune/xsec.sh` makes GENIE 3.06.02 cross-section splines for argon-40
-(1000180400) with tune AR23_20i_00_000 (event-generator list Default):
+### Production: official GENIE AR23 spline package
+
+The production cross-section splines are the official SciSoft package
+`genie_xsec-3.06.00-noarch-AR2320i00000-k250-e1000.tar.bz2`
+(https://scisoft.fnal.gov/scisoft/packages/genie_xsec/v3_06_00/, listed 2025-01-19,
+448998203 bytes). It contains tune AR23_20i_00_000 with the Default generator list,
+250 log-spaced knots from 0.01 to 1000 GeV, and all six flavours.
+
+sha256 `f435a98f5d491a181333f27a9a0b675cb94c326770447b0e98d5190983962dd0`
+(recorded at the first download, 2026-11-10; SciSoft publishes no checksum file).
+
+```bash
+scripts/dune/get_xsec.sh -d <dir>            # download link taken from the index page
+# -> <dir>/genie_xsec/v3_06_00/NULL/AR2320i00000-k250-e1000/data/gxspl-NUsmall.xml
+```
+
+The script records and checks the sha256 and refuses to overwrite anything. If
+`<dir>` already holds the tarball (for example copied in by hand), it checks the
+sha256 and extracts it without downloading. Use `gxspl-NUsmall.xml`, which is the
+file the package's own `ups` table points to:
+
+- 51 targets, Ar40 (1000180400) for all of 12, -12, 14, -14, 16 and -16 (102-110
+  splines per flavour);
+- every spline has 250 knots up to 1000 GeV, and the file declares only tune
+  AR23_20i_00_000.
+
+`gxspl-NUbig.xml.gz` has 127 targets and the same Ar40 content.
+
+Compatibility. The package is labelled GENIE 3.06.00; our GENIE is 3.06.02.
+Evidence that they are compatible (work-area report `reports/09_official_xsec.md`):
+
+- `gspl2root -p 14 -t 1000180400 --tune AR23_20i_00_000` loads `gxspl-NUsmall.xml`
+  with no missing-spline warning and no splines created; it writes 133 graphs for
+  nu_mu + Ar40.
+- The official `NievesQELCCPXSec/ZExp` numu + O16 (neutron) spline agrees with the
+  30 knots computed locally with GENIE 3.06.02. The ratio local/official is
+  0.992-1.015 (mean 0.9998) for E >= 0.3 GeV; it is 0.75-1.03 near threshold
+  (0.13-0.28 GeV), where the cross section rises steeply and the local value is a
+  500-nucleon Monte Carlo average.
+- `gevgen` with these splines, tune AR23_20i_00_000, the TDR FD FHC `numu_flux`
+  (`,NOWIDTH`, 0-120 GeV) and target Ar40 generated 1000 events in 45 s. It
+  computed no splines on the fly: the log has 0 "Creating cross section spline"
+  lines, and `GMCJDriver` only summed the loaded splines. Event types: 747 CC,
+  253 NC; 185 QE, 60 MEC, 332 RES, 416 DIS, 7 COH. All 1000 events are
+  accepted, with error flag 0 and weight 1.
+
+The gevgen log has 30 ERROR lines. None of them comes from spline loading, and
+none removes or reweights an event:
+
+| Count | Emitted by | When | Effect |
+|---|---|---|---|
+| 1 | `QELInteractionListGenerator::CreateInteractionListStrangeCC` | initialisation, numu + Ar40 | The ΔS=1 QE channel exists only for antineutrinos, so the list is empty for numu. No effect. |
+| 23 | `KineGeneratorWithCache::AssertXSecLimits`, called from `QELEventGenerator` | one CC QE event, E = 27.4 GeV | Trial kinematics at Q2 ≈ 25-38 GeV2 give a negative dσ. The accept/reject test `xsec_max * rndm < xsec` rejects them. The event is then generated at Q2 = 3.3 GeV2 and kept. |
+| 5 | `PDGLibrary::Find`, called from `HAIntranuke2018` (the AR23 FSI model) | 5 RES events (2 CC, 3 NC), E = 1.5-3.4 GeV | The residual nucleus after FSI knock-out (8H, 11He, 14Li, 26N, 29O) is not in the PDG table. Its mass is only printed in an INFO message; the remnant stays a `HadrBlob`. The events are kept. |
+| 1 | `utils::kinematics::CohQ2Lim` | one NC COH event, E = 3.38 GeV | The computed Q2min is slightly negative and is clamped to 0, as the message says. The event is kept. |
+
+The spline files are not committed.
+
+### Fallback: computing splines locally
+
+`scripts/dune/xsec.sh` (GENIE 3.06.02, Ar40, AR23_20i_00_000, Default list;
+defaults: flavours 12,-12,14,-14,16,-16, EMAX 120 GeV, 500 knots) is kept only as
+a fallback:
 
 ```bash
 source ~/genie_setup.sh
@@ -267,17 +328,10 @@ scripts/dune/xsec.sh -p 14 -e 120 -n 500 -o <dir>/ar23_ar40_14.xml   # one flavo
 scripts/dune/xsec.sh merge -o <dir>/ar23_ar40.xml <dir>/ar23_ar40_12.xml,<dir>/ar23_ar40_-12.xml,...
 ```
 
-Defaults: flavours 12,-12,14,-14,16,-16; EMAX 120 GeV (the FD flux histograms
-reach 118 GeV); 500 knots; output `$data_dir/dune/xsec/ar23_ar40.xml`. The
-production file is the merged `ar23_ar40.xml`; a `.RUN_INFO.txt` file is
-written next to each output. The script header explains the knot choice: at
-least the knot density per decade of `scripts/genie/xsec.sh` for every
-interaction threshold up to 3.9 GeV.
-
-Runtime: a 60-minute smoke test (numu only, EMAX 10 GeV, 30 knots) did not
-finish the first knot above threshold of the first spline
-(`genie::NievesQELCCPXSec/ZExp` on Ar40, E = 0.13 GeV). With 500 knots, about 318
-CCQE knots per flavour lie between threshold and 10 GeV, where GENIE averages
-each knot over the sampled initial nucleons. One flavour therefore needs at least
-about 318 CPU hours for this spline alone, more than the 36-hour maximum of the
-`main` Slurm partition. The production splines have not been made yet.
+It is not usable as it stands for AR23 on argon. The `NievesQELCCPXSec` (CCQE)
+knot just above threshold (E = 0.133 GeV) did not finish within 90 minutes for
+AR23 x Ar40, while the same knot took 6 s for AR23 x O16 and 0.1 s for
+G18_10b x Ar40 (work-area report `reports/07_knot_timing.md`). Away from
+threshold, one Ar40 CCQE spline with 500 knots up to 120 GeV would take about
+21 CPU hours; the near-threshold knots add at least 20 hours, with no known
+upper bound.
