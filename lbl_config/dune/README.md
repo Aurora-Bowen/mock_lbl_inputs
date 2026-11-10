@@ -189,3 +189,95 @@ nuebar, numubar, nutaubar).
 - `$filter_state = 0`, `$filter_value`, `$target_mass = LAMASS` (40), the
   `@norm`/`@power`/`@time` of the fluxes and the rules' `@energy_window = 0.5 : 18.0`
   and systematics are recorded in `meta/` only; nothing in the histograms depends on them.
+
+## Production choices
+
+### Far-detector flux
+
+The production FD flux is the TDR (Nov 2017) flux in `tdr2017/flux/`. The
+Sept 2021 flux in `sept2021/flux/` is kept for comparison studies.
+
+Reason. A pre-registered rule was tested: within 0.5-8 GeV reconstructed
+energy, the composition distance D_flux between the two fluxes must not exceed
+the distance D_ref that oscillation-parameter changes already produce
+(delta = -pi/2, +pi/2, sin^2 theta23 = 0.4197 against NuFit 4.0 NO), in the bins
+holding most signal events. It failed for three of the four signal samples.
+Share of signal events in bins with D_flux > D_ref:
+
+| rule | share |
+|---|---|
+| nue_app | 60 % |
+| nuebar_app | 38 % |
+| numu_dis | 62 % |
+| numubar_dis | 98 % |
+
+The bound on the relative change of the post-smearing signal efficiencies is
+nevertheless small: D_flux/epsilon averages 1.6-3.8 % and is at most 5.7 % over
+the bins holding 90 % of each signal channel's events. (Work-area report
+`reports/05_flux_choice.md`.)
+
+### nu_tau CC backgrounds
+
+nu_tau CC backgrounds are included: nu_tau events are generated with GENIE
+AR23 and folded through the nu_tau smearing matrices and post-smearing
+efficiencies shipped with arXiv:2103.04797. The GLoBES cross-section files of
+that release set the nu_tau and nu_tau-bar columns to zero
+(`xsec/CC/nutau`, `xsec/CC/nutaubar` in `tdr2017_response.root`), so the GLoBES
+configuration itself produces no nu_tau events. The folding code will have a
+switch to exclude them for direct comparison with the GLoBES configuration.
+
+The nu_tau part of the response was checked (all numbers from
+`tdr2017_response.root`, `channels.tsv`, `rules.tsv`):
+
+| matrix | first non-zero true-energy column | non-zero columns | column sums above it |
+|---|---|---|---|
+| `app_nutau_bkg` | 2.625-2.75 GeV | 76 of 99 (up to 80-90 GeV) | 1 within 5e-6; 90-110 GeV empty |
+| `dis_nutau_bkg` | 2.625-2.75 GeV | 76 of 99 (up to 80-90 GeV) | 1 within 7e-6; 90-110 GeV empty |
+| `app_nutaubar_bkg` | 3.375-3.5 GeV | 68 of 99 (up to 60-70 GeV) | 1 within 5e-6; 70-110 GeV empty |
+| `dis_nutaubar_bkg` | 3.375-3.5 GeV | 68 of 99 (up to 60-70 GeV) | 1 within 5e-6; 70-110 GeV empty |
+
+There are 8 nu_tau channels (`final_flavour` = t), each in exactly one rule as a
+background with coefficient 1.0: `FHC_app_bkg_nutau(bar)` in `nue_app`,
+`RHC_app_bkg_nutau(bar)` in `nuebar_app`, `FHC_dis_bkg_nutau(bar)` in `numu_dis`,
+`RHC_dis_bkg_nutau(bar)` in `numubar_dis` (energy window 0.5-18 GeV). Their
+post-smearing efficiencies are non-zero over reconstructed energies from
+0-0.25 GeV up to 60-100 GeV, with maxima between 0.17 and 1.0. Above the first
+non-zero column every column is normalised, so the nu_tau response is usable
+above those energies. True nu_tau(bar) energy below 2.625 (3.375) GeV has no
+column and would be lost.
+
+## Known response limitations
+
+- Empty true-energy columns (column sum 0): `app_nuebar_bkg` at 0-0.5,
+  0.875-1 and 2.125-2.25 GeV (7-12 % of the nuebar flux falls there);
+  0-0.125 GeV in the numu/numubar matrices (`app_numu_bkg`, `dis_numu_sig`,
+  `app_numubar_bkg`, `dis_numubar_sig`); above 60-90 GeV in most matrices.
+- The migrations (smearing matrices) and efficiencies come from the TDR
+  simulation with GENIE 2.12.10. Using AR23 changes the rates and the channel
+  composition but not the migrations; this matters most for nu_tau.
+
+## Splines
+
+`scripts/dune/xsec.sh` makes GENIE 3.06.02 cross-section splines for argon-40
+(1000180400) with tune AR23_20i_00_000 (event-generator list Default):
+
+```bash
+source ~/genie_setup.sh
+scripts/dune/xsec.sh -p 14 -e 120 -n 500 -o <dir>/ar23_ar40_14.xml   # one flavour
+scripts/dune/xsec.sh merge -o <dir>/ar23_ar40.xml <dir>/ar23_ar40_12.xml,<dir>/ar23_ar40_-12.xml,...
+```
+
+Defaults: flavours 12,-12,14,-14,16,-16; EMAX 120 GeV (the FD flux histograms
+reach 118 GeV); 500 knots; output `$data_dir/dune/xsec/ar23_ar40.xml`. The
+production file is the merged `ar23_ar40.xml`; a `.RUN_INFO.txt` file is
+written next to each output. The script header explains the knot choice: at
+least the knot density per decade of `scripts/genie/xsec.sh` for every
+interaction threshold up to 3.9 GeV.
+
+Runtime: a 60-minute smoke test (numu only, EMAX 10 GeV, 30 knots) did not
+finish the first knot above threshold of the first spline
+(`genie::NievesQELCCPXSec/ZExp` on Ar40, E = 0.13 GeV). With 500 knots, about 318
+CCQE knots per flavour lie between threshold and 10 GeV, where GENIE averages
+each knot over the sampled initial nucleons. One flavour therefore needs at least
+about 318 CPU hours for this spline alone, more than the 36-hour maximum of the
+`main` Slurm partition. The production splines have not been made yet.
