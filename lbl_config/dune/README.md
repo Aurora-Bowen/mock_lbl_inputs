@@ -370,3 +370,99 @@ G18_10b x Ar40 (work-area report `reports/07_knot_timing.md`). Away from
 threshold, one Ar40 CCQE spline with 500 knots up to 120 GeV would take about
 21 CPU hours; the near-threshold knots add at least 20 hours, with no known
 upper bound.
+
+## Expected rates (`gen/dune/rates.tsv`)
+
+`gen/dune/rates.tsv` lists, for each far-detector GENIE sample, the expected
+number of interactions before oscillation, efficiency and smearing, and the
+number of events to generate. It is written by `scripts/dune/rates.sh`
+(`src/dune/ExpectedRates.C`).
+
+### Exposure
+
+| constant | value | source |
+|---|---|---|
+| `NUTIME`, `NUBARTIME` | 6.5 yr each | `tdr2017/globes_config/definitions.inc:3-4` |
+| `LAMASS` | 40 kt | `tdr2017/globes_config/definitions.inc:5` |
+| `@power` | 11.0 (1e20 POT/yr at 1.2 MW) | `tdr2017/globes_config/flux/Beam.inc:20,27` |
+| POT | 6.5 x 1.1e21 = 7.15e21 per beam mode | |
+| N_Ar | 40e9 g x 6.02214076e23 / 39.9623831 g/mol = 6.027809e32 | |
+| exposure | 40 kt x 1.2 MW x 13 yr = 624 kt-MW-yr | |
+
+### Samples
+
+8 per beam mode; the RHC rows are the same with `_rhc`, the RHC flux file
+`flux_dune_antineutrino_FD_uniform.root` and its histograms. `probe` is the
+flavour given to `gevgen -p`; the flux histogram is that of the parent flavour.
+
+| sample (FHC) | flux histogram (parent) | probe pdg | generator list |
+|---|---|---|---|
+| `numu_x_numu_fhc` | `numu_flux` | 14 | Default |
+| `numubar_x_numubar_fhc` | `numubar_flux` | -14 | Default |
+| `nue_x_nue_fhc` | `nue_flux` | 12 | Default |
+| `nuebar_x_nuebar_fhc` | `nuebar_flux` | -12 | Default |
+| `numu_x_nue_fhc` | `numu_flux` | 12 | CC |
+| `numubar_x_nuebar_fhc` | `numubar_flux` | -12 | CC |
+| `numu_x_nutau_fhc` | `numu_flux` | 16 | CC |
+| `numubar_x_nutaubar_fhc` | `numubar_flux` | -16 | CC |
+
+The appearance and nu_tau samples use the `CC` list because `src/FakeRecon.C`
+gives NC events in those samples weight 0: the intrinsic sample on the same
+flux already carries the full NC rate. In GENIE 3.06.02 the `CC` list
+(`config/EventGeneratorListAssembler.xml`) is exactly the nine CC generators of
+the AR23 `Default` list (`config/AR23_20i/TuneGeneratorList.xml`).
+
+### Rates
+
+With E_i the bin centres and Phi_i the contents (nu/m^2/POT) of the parent
+histogram in the `_uniform.root` file, and `tot_cc`, `tot_nc` the Ar40 total
+cross sections of the probe flavour from `gspl2root` (1e-38 cm^2 per nucleus,
+tune AR23_20i_00_000, official spline package, 1000 log-spaced points over
+0.01-120 GeV, linear interpolation):
+
+    N_cc = POT x N_Ar x sum_i Phi_i x 1e-4 x tot_cc(E_i) x 1e-38
+    N_nc = the same with tot_nc   (Default samples only; 0 for CC samples)
+    N    = N_cc + N_nc
+
+`tot_cc + tot_nc` leaves out nu-e elastic scattering of nue and nuebar (GENIE
+labels it weak-mix, graph `ve_ccncmix`); it is 4-6e-4 of N in those samples.
+The electron-target processes inside the totals (`imd_cc`, `imdanh_cc` in
+`tot_cc`; `ve_nc` in `tot_nc`) are at most 4e-3 of a sample and are generated
+with the Default list but not with the CC list.
+
+Events to generate:
+
+    nevents = max(100000, 20 x N rounded up to the next multiple of 10000)
+
+With at least 20 generated events per expected interaction before oscillation,
+each MC event weighs at most 1/20 of a data event for any oscillation
+parameters, so the MC variance in any bin is at most 5 % of the data Poisson
+variance. The script stops if any `nevents` exceeds 2,000,000.
+
+Results (AR23 on Ar40, 624 kt-MW-yr; `gen/dune/rates.tsv`): FHC numu CC
+6.16e4, NC 2.13e4; RHC numubar CC 1.89e4, NC 8.45e3; the largest sample is
+`numu_x_numu_fhc` with 1,660,000 events, and the 16 samples sum to 5,390,000
+events. The cross-check against the GENIE 2.12 tables shipped with the TDR
+configuration (`tdr2017_response.root`, `xsec/CC/<flavour>`, sigma/E per
+nucleon x E x 40, nearest point outside 0.105-93.5 GeV) gives AR23 / 2.12 =
+1.01-1.04 for the antineutrino and 1.12-1.13 for the neutrino intrinsic
+samples (required 0.7-1.3).
+
+### Running
+
+    source ~/genie_setup.sh                      # GENIE 3.06.02 and ROOT
+    scripts/dune/rates.sh -x <dir>/gxspl-NUsmall.xml -d <outdir> [-s all|xsec|rates]
+
+The `xsec` stage runs `gspl2root -f <xml> -p <pdg> -t 1000180400 --tune
+AR23_20i_00_000 -e 0.01,120 -l` for the six flavours into
+`<outdir>/xsec_<flavour>.root` (log `.log`), which takes about 25 s each and
+must run on a compute node (the script refuses outside a Slurm allocation);
+then it checks that numu `tot_cc`(10 GeV) / 10 / 40 lies in 0.6-0.8
+(1e-38 cm^2/GeV/nucleon; found 0.739). The `rates` stage repeats the unit
+check and runs the macro, which writes `gen/dune/rates.tsv` and prints the
+cross-check. Every output must be new: the script refuses to overwrite the
+xsec files (`gspl2root` would open them in UPDATE mode), `rates.tsv` and
+`<outdir>/rates.log`. The header of `rates.tsv` records POT, N_Ar, exposure,
+the spline path and sha256, the tune, the git commit and the nevents rule.
+Each `gspl2root` log for a neutrino (not antineutrino) flavour has 2 benign
+`CreateInteractionListStrangeCC` ERROR lines (see "Splines").
