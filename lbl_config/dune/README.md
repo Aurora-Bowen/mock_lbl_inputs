@@ -11,12 +11,13 @@ The same version string (`v3r5p4`, `OptimizedEngineeredNov2017`) appears in the
 GLoBES flux file names in `tdr2017/globes_config/flux/`, which are
 byte-identical to the FD `*_globes.txt` files in `tdr2017/flux/`.
 
-Checksums of every file are in `tdr2017/SHA256SUMS.txt` (paths relative to `tdr2017/`).
+Checksums of every downloaded file are in `tdr2017/SHA256SUMS.txt` (paths relative to `tdr2017/`).
 
 ## Layout
 
     tdr2017/flux/            flux_dune_{neutrino,antineutrino}_{ND,FD}.root
                              flux_dune_{neutrino,antineutrino}_{ND,FD}_globes.txt
+                             flux_dune_{neutrino,antineutrino}_FD_uniform.root (derived, see below)
     tdr2017/globes_config/   GLoBES configuration tree, unmodified
     tdr2017/SHA256SUMS.txt
 
@@ -31,6 +32,40 @@ Checksums of every file are in `tdr2017/SHA256SUMS.txt` (paths relative to `tdr2
   used because their oscillation parameters and units are not documented.
 - Flux locations: near detector (ND) 574 m and far detector (FD) 1297 km
   downstream of the start of Horn 1.
+
+### Uniform-bin FD copies (`flux_dune_*_FD_uniform.root`)
+
+`tdr2017/flux/flux_dune_neutrino_FD_uniform.root` (FHC) and
+`tdr2017/flux/flux_dune_antineutrino_FD_uniform.root` (RHC) hold `numu_flux`,
+`numubar_flux`, `nue_flux` and `nuebar_flux` of the matching FD file on 944 bins
+of 0.125 GeV over 0-118 GeV (`TH1D(name, title, 944, 0., 118.)`, original title
+and axis titles). Each original bin's content is divided equally among the 1, 4
+or 16 new bins that cover it, so the content is still the per-bin integrated
+flux in nu/m^2/POT.
+
+Why. `gevgen ... ,NOWIDTH` samples the original variable-width histograms
+correctly, but NUISANCE does not: `nuisflat` sets
+`fScaleFactor = EventHist.Integral("width") / N / FluxHist.Integral("width")`
+(`src/MCStudies/GenericFlux_Vectors.cxx`, `app/PrepareGENIE.cxx`), which treats
+the content as a density. On uniform bins the width cancels between the event
+and flux histograms. The HK chain uses uniform-bin flux files for the same
+reason (`lbl_config/hk/t2kflux_2020_*_uniform.root`).
+
+How. `scripts/dune/uniform_flux.sh` (from the repository root, ROOT set up) checks
+the sha256 of the two FD inputs against `tdr2017/SHA256SUMS.txt` and runs
+`src/dune/MakeUniformFlux.C` on each; it refuses to overwrite an output. The
+macro exits non-zero unless, for every histogram: every original edge is on the
+0.125 GeV grid (0 to 118 GeV); underflow and overflow are 0; for every original
+bin the sum of its new bins equals its content (relative difference < 1e-12);
+the total is unchanged (< 1e-12); the output has fixed bins
+(`IsVariableBinSize()` false). All checks pass: the original bins split into
+64 x 1, 24 x 4 and 49 x 16 new bins, the largest per-bin relative difference
+is 4.7e-16 and the largest total relative difference 1.2e-14.
+
+The two files are derived, so they are not in `tdr2017/SHA256SUMS.txt`. sha256:
+
+    8c7ef6cc226bff9a1c35fa9aea8992ba94c54b25845f2a6002e1123dcce3be53  flux/flux_dune_neutrino_FD_uniform.root
+    1a0e7da89ffb7d3260d50c4c41c31aa748f6b0625be50d51e93f3a46c21472fb  flux/flux_dune_antineutrino_FD_uniform.root
 
 ## GLoBES-format flux text files (`*_globes.txt`)
 
