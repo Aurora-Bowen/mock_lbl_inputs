@@ -408,9 +408,16 @@ flavour given to `gevgen -p`; the flux histogram is that of the parent flavour.
 
 The appearance and nu_tau samples use the `CC` list because `src/FakeRecon.C`
 gives NC events in those samples weight 0: the intrinsic sample on the same
-flux already carries the full NC rate. In GENIE 3.06.02 the `CC` list
-(`config/EventGeneratorListAssembler.xml`) is exactly the nine CC generators of
-the AR23 `Default` list (`config/AR23_20i/TuneGeneratorList.xml`).
+flux already carries the full NC rate. In GENIE 3.06.02 the AR23 `Default` list
+(`config/AR23_20i/TuneGeneratorList.xml`) has eleven generators whose processes
+are weak CC: the nine of the `CC` list (`config/EventGeneratorListAssembler.xml`:
+QEL-CC, RES-CC, DIS-CC, COH-CC-PION, DIS-CC-CHARM, QEL-CC-CHARM, MEC-CC, DFR-CC,
+QEL-CC-LAMBDA) plus IMD and IMD-ANH, which scatter on atomic electrons.
+`NuEInteractionListGenerator` (`src/Physics/NuElectron/EventGen/`) builds IMD
+only for a numu probe and IMD-ANH only for a nuebar probe, so among the
+CC-list samples only `numubar_x_nuebar_{fhc,rhc}` lose a process (IMD-ANH);
+`numu_x_nue_*` and the four nu_tau samples lose nothing. The size is given
+under "Rates" (at most 1.4e-4 of N_cc).
 
 ### Rates
 
@@ -426,9 +433,12 @@ tune AR23_20i_00_000, official spline package, 1000 log-spaced points over
 
 `tot_cc + tot_nc` leaves out nu-e elastic scattering of nue and nuebar (GENIE
 labels it weak-mix, graph `ve_ccncmix`); it is 4-6e-4 of N in those samples.
-The electron-target processes inside the totals (`imd_cc`, `imdanh_cc` in
-`tot_cc`; `ve_nc` in `tot_nc`) are at most 4e-3 of a sample and are generated
-with the Default list but not with the CC list.
+The electron-target processes inside the totals are small: IMD (`imd_cc`,
+numu probe only) and IMD-ANH (`imdanh_cc`, nuebar probe only) are at most
+1.4e-4 of N_cc, and nu-e elastic NC (`ve_nc`, numu/numubar/nutau/nutaubar
+probes) at most 3.6e-3 of N. All three are in the Default list and none in the
+CC list: the CC-list samples lose IMD-ANH for a nuebar probe (see "Samples")
+and nu-e elastic NC, which they are not meant to contain.
 
 Events to generate:
 
