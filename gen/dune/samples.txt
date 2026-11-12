@@ -1,0 +1,37 @@
+# DUNE far-detector GENIE sample manifest: one row per sample, read by
+# scripts/dune/gen.sh and scripts/dune/flat.sh. Fields are separated by '|';
+# '#' starts a comment. Same layout as gen/genie/samples.txt plus a final
+# `list` column.
+#
+#   name      sample name (the `sample` column of gen/dune/rates.tsv)
+#   stem      output stem under $data_dir: <parent>/<parent>_x_<probe>_<FHC|RHC>
+#             (parent = flux flavour; no event count in the stem, the counts are computed)
+#   pdg       probe PDG passed to gevgen (interaction flavour)
+#   flux      flux file, relative to the repository (uniform 0.125 GeV bins, see README)
+#   hist      flux histogram (parent flavour)
+#   nevents   events to generate, the `nevents` column of gen/dune/rates.tsv:
+#             max(100000, 20 x N rounded up to the next multiple of 10000), N the
+#             expected interactions before oscillation (CC+NC for Default, CC for CC list)
+#   run       gevgen run number (930000 + row index)
+#   seed      gevgen seed (500000 + row index)
+#   pot       POT for FakeRecon normalisation: 7.15e21 per beam mode (rates.tsv header)
+#   flux_pdg  flavour of the flux (parent flavour for appearance and nu_tau samples)
+#   list      gevgen --event-generator-list
+#
+# name                   | stem                               | pdg | flux                                                                | hist         | nevents | run    | seed   | pot     | flux_pdg | list
+numu_x_numu_fhc          | numu/numu_x_numu_FHC               |  14 | lbl_config/dune/tdr2017/flux/flux_dune_neutrino_FD_uniform.root     | numu_flux    | 1660000 | 930000 | 500000 | 7.15e21 |       14 | Default
+numubar_x_numubar_fhc    | numubar/numubar_x_numubar_FHC      | -14 | lbl_config/dune/tdr2017/flux/flux_dune_neutrino_FD_uniform.root     | numubar_flux |  100000 | 930001 | 500001 | 7.15e21 |      -14 | Default
+nue_x_nue_fhc            | nue/nue_x_nue_FHC                  |  12 | lbl_config/dune/tdr2017/flux/flux_dune_neutrino_FD_uniform.root     | nue_flux     |  100000 | 930002 | 500002 | 7.15e21 |       12 | Default
+nuebar_x_nuebar_fhc      | nuebar/nuebar_x_nuebar_FHC         | -12 | lbl_config/dune/tdr2017/flux/flux_dune_neutrino_FD_uniform.root     | nuebar_flux  |  100000 | 930003 | 500003 | 7.15e21 |      -12 | Default
+numu_x_nue_fhc           | numu/numu_x_nue_FHC                |  12 | lbl_config/dune/tdr2017/flux/flux_dune_neutrino_FD_uniform.root     | numu_flux    | 1260000 | 930004 | 500004 | 7.15e21 |       14 | CC
+numubar_x_nuebar_fhc     | numubar/numubar_x_nuebar_FHC       | -12 | lbl_config/dune/tdr2017/flux/flux_dune_neutrino_FD_uniform.root     | numubar_flux |  100000 | 930005 | 500005 | 7.15e21 |      -14 | CC
+numu_x_nutau_fhc         | numu/numu_x_nutau_FHC              |  16 | lbl_config/dune/tdr2017/flux/flux_dune_neutrino_FD_uniform.root     | numu_flux    |  100000 | 930006 | 500006 | 7.15e21 |       14 | CC
+numubar_x_nutaubar_fhc   | numubar/numubar_x_nutaubar_FHC     | -16 | lbl_config/dune/tdr2017/flux/flux_dune_neutrino_FD_uniform.root     | numubar_flux |  100000 | 930007 | 500007 | 7.15e21 |      -14 | CC
+numu_x_numu_rhc          | numu/numu_x_numu_RHC               |  14 | lbl_config/dune/tdr2017/flux/flux_dune_antineutrino_FD_uniform.root | numu_flux    |  300000 | 930008 | 500008 | 7.15e21 |       14 | Default
+numubar_x_numubar_rhc    | numubar/numubar_x_numubar_RHC      | -14 | lbl_config/dune/tdr2017/flux/flux_dune_antineutrino_FD_uniform.root | numubar_flux |  550000 | 930009 | 500009 | 7.15e21 |      -14 | Default
+nue_x_nue_rhc            | nue/nue_x_nue_RHC                  |  12 | lbl_config/dune/tdr2017/flux/flux_dune_antineutrino_FD_uniform.root | nue_flux     |  100000 | 930010 | 500010 | 7.15e21 |       12 | Default
+nuebar_x_nuebar_rhc      | nuebar/nuebar_x_nuebar_RHC         | -12 | lbl_config/dune/tdr2017/flux/flux_dune_antineutrino_FD_uniform.root | nuebar_flux  |  100000 | 930011 | 500011 | 7.15e21 |      -12 | Default
+numu_x_nue_rhc           | numu/numu_x_nue_RHC                |  12 | lbl_config/dune/tdr2017/flux/flux_dune_antineutrino_FD_uniform.root | numu_flux    |  230000 | 930012 | 500012 | 7.15e21 |       14 | CC
+numubar_x_nuebar_rhc     | numubar/numubar_x_nuebar_RHC       | -12 | lbl_config/dune/tdr2017/flux/flux_dune_antineutrino_FD_uniform.root | numubar_flux |  390000 | 930013 | 500013 | 7.15e21 |      -14 | CC
+numu_x_nutau_rhc         | numu/numu_x_nutau_RHC              |  16 | lbl_config/dune/tdr2017/flux/flux_dune_antineutrino_FD_uniform.root | numu_flux    |  100000 | 930014 | 500014 | 7.15e21 |       14 | CC
+numubar_x_nutaubar_rhc   | numubar/numubar_x_nutaubar_RHC     | -16 | lbl_config/dune/tdr2017/flux/flux_dune_antineutrino_FD_uniform.root | numubar_flux |  100000 | 930015 | 500015 | 7.15e21 |      -14 | CC

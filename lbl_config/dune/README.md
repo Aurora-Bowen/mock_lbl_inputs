@@ -476,3 +476,133 @@ xsec files (`gspl2root` would open them in UPDATE mode), `rates.tsv` and
 the spline path and sha256, the tune, the git commit and the nevents rule.
 Each `gspl2root` log for a neutrino (not antineutrino) flavour has 2 benign
 `CreateInteractionListStrangeCC` ERROR lines (see "Splines").
+
+## Generation (`gen/dune/samples.txt`, `scripts/dune/gen.sh`, `scripts/dune/flat.sh`)
+
+### Manifest
+
+`gen/dune/samples.txt` has one row per far-detector sample, 16 rows (the 8
+samples of "Samples" for FHC and for RHC), with the fields separated by `|`:
+
+| column | content |
+|---|---|
+| `name` | sample name, the `sample` column of `gen/dune/rates.tsv` |
+| `stem` | output stem under `$data_dir`: `<parent>/<parent>_x_<probe>_<FHC\|RHC>` |
+| `pdg` | probe PDG code given to `gevgen -p` |
+| `flux` | flux file relative to the repository: `flux_dune_{neutrino,antineutrino}_FD_uniform.root` |
+| `hist` | flux histogram of the parent flavour |
+| `nevents` | events to generate, the `nevents` column of `rates.tsv` |
+| `run` | gevgen run number, 930000 + row index |
+| `seed` | gevgen seed, 500000 + row index |
+| `pot` | 7.15e21, the POT per beam mode (`rates.tsv` header) |
+| `flux_pdg` | flavour of the flux (parent) |
+| `list` | `gevgen --event-generator-list`: `Default` or `CC` |
+
+The intrinsic samples (`numu_x_numu`, `numubar_x_numubar`, `nue_x_nue`,
+`nuebar_x_nuebar`) use the `Default` list, the appearance and nu_tau samples
+(`numu_x_nue`, `numubar_x_nuebar`, `numu_x_nutau`, `numubar_x_nutaubar`) the
+`CC` list; the reason, and what the `CC` list leaves out, is given under
+"Samples".
+
+### Scripts
+
+`scripts/dune/gen.sh [<sample> [nevents]]` runs, per manifest row,
+
+    gevgen -r <run> -n <nevents> -e 0,120 -p <pdg> -t 1000180400
+           -f <flux>,<hist>,NOWIDTH -F 0,0,1,0,0,0,0 --seed <seed>
+           --cross-sections $xsec_file --tune AR23_20i_00_000
+           --event-generator-list <list> --message-thresholds gen/genie/Messenger_production.xml
+
+in `$data_dir/genie/<name>/`, writing `<name>.ghep.root`, the gevgen log
+`<name>.gevgen.log` and gevgen's `input-flux.root`, and prints the sha256 of
+`$xsec_file` (the official spline file, see "Splines"). It then checks that
+`gtree` has exactly `nevents` entries and that the log has no "Creating cross
+section spline" line (which would mean a spline was computed on the fly).
+`<sample>` is a manifest name or 0-based row index; the optional event count
+overrides the manifest (pilot runs).
+
+`scripts/dune/flat.sh [<sample>]` runs only `PrepareGENIE -i <ghep>
+-f input-flux.root,spectrum -t "1000180400[1]" -o <name>.prepared.ghep.root`
+and `nuisflat -i GENIE:<prepared> -f GenericVectors -o
+$data_dir/<stem>_flattree.root`, then checks that `FlatTree_VARS` has as many
+entries as `gtree`. The entry counts are read with `root -q`, whose exit
+status is the value of the last expression and is therefore ignored; the
+printed values decide.
+
+Both scripts need `working_dir` (the repository), `data_dir` and, for
+`gen.sh`, `xsec_file`, and refuse to overwrite any output.
+
+### Environment
+
+`gen.sh` needs GENIE 3.06.02 and ROOT 6.30.04 (`source ~/genie_setup.sh`).
+`flat.sh` needs `PrepareGENIE` and `nuisflat` from a NUISANCE build with GENIE
+support in the same GENIE and ROOT environment. The build in
+`~/nuisance_setup.sh` has no GENIE support (no `PrepareGENIE`); the one used is
+in another user's home directory,
+`/home/haowei/projects/nuisance/build-genie/Linux/`, and its `setup.sh` needs,
+in this order,
+
+    source ~/genie_setup.sh
+    source /home/haowei/projects/neut/build/Linux/bin/setup.NEUT.sh
+    source /home/haowei/projects/T2KReWeight/build/Linux/bin/setup.NIWG.sh
+    source /home/haowei/projects/T2KReWeight/build/Linux/bin/setup.T2K.sh
+    source /home/haowei/projects/nuisance/build-genie/Linux/setup.sh
+
+`PrepareGENIE` prints 3 `AlgConfigPool` ERROR lines per run that do not affect
+the output. That build is not under our control: if it changes or disappears,
+`flat.sh` needs another NUISANCE build with GENIE support.
+
+### Normalisation
+
+Each event of a DUNE sample stands for `N / nevents` interactions at
+624 kt-MW-yr before oscillation, efficiency and smearing, with `N` the
+expected interactions of the sample in `gen/dune/rates.tsv` (same official
+splines, same flux) and `nevents` the number of generated events. This holds
+because `gevgen` draws events in proportion to flux x cross section and every
+event has weight 1. The DUNE fake-reconstruction step, which is not part of the
+generation, applies this weight.
+
+The `fScaleFactor` branch of the DUNE flat trees is not used. PrepareGENIE
+rebuilds the cross section from the events, as a sum over interaction modes
+of the per-mode, per-flux-bin average of the selected-process cross section,
+and the result depends on the number of events per bin (empty mode-bin cells
+count 0): on the 10000-event pilots it was 14-15 % below the spline
+flux-averaged cross section (work-area report `reports/11_pilot.md`).
+`src/FakeRecon.C` is HK-specific and is not run on these files.
+
+### Running
+
+    export working_dir=<repository> data_dir=<output dir>
+    export xsec_file=<dir>/genie_xsec/v3_06_00/NULL/AR2320i00000-k250-e1000/data/gxspl-NUsmall.xml
+    scripts/init_data_dir.sh
+    (source ~/genie_setup.sh; scripts/dune/gen.sh <sample>)
+    (the five setup lines above;  scripts/dune/flat.sh <sample>)
+
+One sample per Slurm task; the production array is kept with the work area
+(`jobs/gen_fd_ar23.sbatch`), which records the environment lines.
+
+### Pilot results
+
+10000 events each of `numu_x_numu_fhc` and `numu_x_nutau_fhc`, one Slurm task
+each (work-area reports `11_pilot.md`, `12_production.md`):
+
+- gevgen exit 0, `gtree` and `FlatTree_VARS` 10000 entries, no spline computed
+  on the fly; the gevgen ERROR lines are of the kinds seen with the splines
+  (negative differential cross section trials, `PDGLibrary::Find`,
+  `CohQ2Lim`, `StrangeCC`) plus, in the nu_tau sample, one MEC event whose
+  outgoing nucleon pair had no open decay channel; GENIE flags such events
+  unphysical and regenerates them at the same energy, nothing is dropped or
+  reweighted.
+- `PDGnu` is the probe flavour in every event; the nu_tau CC sample has no NC
+  event; the numu Default sample has an NC fraction of 0.2513 against
+  N_nc / N = 0.2567 from `rates.tsv` (z = -1.2).
+- Mean `Enu_true` 5.73 GeV (numu) and 20.26 GeV (nu_tau) against the
+  flux x cross section expectation 5.80 and 20.29 GeV.
+- The `Enu_true` spectrum against flux x cross section in 0.5 GeV bins (merged
+  from the high-energy end to at least 20 expected events per bin): chi2/ndf
+  51.7/61, p = 0.80 (numu) and 93.2/108, p = 0.84 (nu_tau); largest pull 2.7.
+- Speed on one core: gevgen 0.027 s/event (numu Default) and 0.036 s/event
+  (nu_tau CC), peak memory 0.8 GB; `flat.sh` 0.0012 s/event, 0.33 GB. Size per
+  event: GHEP 1.0-1.2 kB, prepared GHEP 1.06-1.2 kB, flat tree 0.42-0.44 kB.
+  The full production (5.39 M events) is about 43 core-hours and 14 GB, the
+  largest sample (`numu_x_numu_fhc`, 1.66 M events) about 13 h.
