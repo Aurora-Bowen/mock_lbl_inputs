@@ -606,3 +606,138 @@ each (work-area reports `11_pilot.md`, `12_production.md`):
   event: GHEP 1.0-1.2 kB, prepared GHEP 1.06-1.2 kB, flat tree 0.42-0.44 kB.
   The full production (5.39 M events) is about 43 core-hours and 14 GB, the
   largest sample (`numu_x_numu_fhc`, 1.66 M events) about 13 h.
+
+## Fake reconstruction (`src/dune/FoldResponse.C`, `scripts/dune/recon.sh`)
+
+`scripts/dune/recon.sh` turns each flat tree into a fakerecon tree,
+`$data_dir/<stem>_fakerecon.root`, next to `<stem>_flattree.root`. It is the DUNE
+counterpart of `scripts/recon.sh` + `src/FakeRecon.C`, which are HK-specific and
+are not used here. No oscillation weight is computed and no selection file is
+written.
+
+### Method
+
+GLoBES computes, per channel, `rate(reco bin i) = eff[i] x sum_k R[i,k] x
+(flux x xsec)(true bin k)`. The folding does the same event by event:
+
+- Every event stands for `N / nevents` interactions (`POTWeight`, see
+  "Normalisation").
+- For each channel the event belongs to, the macro takes the true-energy bin `k`
+  of `Enu_true` on the x axis of `smearing/<energy_name>`.
+- It draws the reconstructed bin `i` from column `k`, with probabilities
+  `R[i,k] / sum_i R[i,k]`.
+- It draws `Enu_rec` uniformly inside bin `i`, stored as a float with
+  `lo <= Enu_rec < hi`.
+- It sets `SelEffWeight = efficiency/<FHC|RHC>/<channel>` in bin `i`.
+
+The random seed is the manifest `seed`, so the same input gives the same output.
+
+### Channel lookup
+
+The lookup is driven by `tdr2017/channels.tsv`. An event matches a channel when
+all of the following hold:
+
+- the beam mode equals the sample's;
+- the polarity equals the sign of the flux flavour;
+- the initial flavour equals the flux flavour;
+- either the event is CC, the channel's `xsec_name` is CC and its final flavour is
+  the event's neutrino flavour (`e`/`m`/`t`), or the event is NC and the channel is
+  NC with final flavour `NOSC_m`.
+
+As a result:
+
+- Every numu/numubar-flux event matches two channels, one in an appearance rule
+  and one in a disappearance rule. This holds for CC events of any flavour and for
+  NC events.
+- A nue/nuebar CC event matches one channel.
+- NC events of the nue/nuebar samples match none, because the GLoBES NC channels
+  are defined on the numu/numubar flux only.
+
+There is one output row per (event, matched channel). The two selections of an
+event are treated as independent, as in GLoBES.
+
+### Branches
+
+The tree `FlatTree_VARS` keeps every flat-tree branch, as the HK fakerecon does,
+and adds:
+
+| branch | meaning |
+|---|---|
+| `Enu_rec` (F) | reconstructed energy [GeV] |
+| `POTWeight` (D) | `N / nevents`: interactions per event at 624 kt-MW-yr, before oscillation |
+| `SelEffWeight` (D) | post-smearing efficiency in the drawn bin |
+| `SampleIndex` (I) | GLoBES rule of the channel: 0 `nue_app`, 1 `numu_dis`, 2 `nuebar_app`, 3 `numubar_dis` |
+| `ChannelIndex` (I) | 0-based data row of `channels.tsv` |
+| `flux_pdg` (I) | flux (parent) flavour |
+| `isRHC` (O) | beam mode |
+| `flat_entry` (L) | entry in the flat tree, equal to the GHEP entry |
+| `true_bin`, `reco_bin` (I) | 0-based bins `k` and `i` |
+
+- **Alignment with GHEP entries.** Use `flat_entry`. `src/genie/genie_splines.cxx`
+  assumes one row per event and HK's drop rules, so it does not apply to these files
+  as it is. No HK drop rule is applied here: with `N / nevents` every generated event
+  must stay.
+- **Not used.** `fScaleFactor` is carried over from the flat tree and must not be
+  used. There is no `OscWeight`.
+- **Metadata.** `TNamed` objects record `sample`, `beam`, `flux_pdg`, `channels`,
+  `rules`, `N`, `nevents`, `POTWeight`, `seed`, `input` and `provenance`. The
+  provenance holds the git commit and the sha256 of the macro, the script, the
+  response file, `channels.tsv` and `rules.tsv`.
+- **Excluding nu_tau.** The nu_tau channels are ChannelIndex 6, 7, 16, 17, 22, 23,
+  28 and 29. Excluding these rows is the switch for comparison with the GLoBES
+  configuration (see "nu_tau CC backgrounds").
+
+### What is not written
+
+- **Empty column.** No row is written when column `k` of the channel's matrix sums
+  to 0 ("Known response limitations"). This affects:
+  - nuebar at 0-0.5, 0.875-1 and 2.125-2.25 GeV;
+  - nu_tau (nu_tau-bar) below 2.625 (3.375) GeV;
+  - numu/numubar at 0-0.125 GeV.
+- **Out of range.** No row is written when `Enu_true` is outside 0-110 GeV.
+
+The script prints both counts per channel. In the AR23 production the empty
+columns remove at most 1.5 % of a channel's events (`numubar_x_nutaubar_rhc`), and
+no event is out of range.
+
+### Running
+
+    source ~/genie_setup.sh
+    export working_dir=<repository> data_dir=<output dir>
+    scripts/dune/recon.sh [sample]      # by name or 0-based manifest row; all if omitted
+
+The script reads the manifest row (stem, `flux_pdg`, `seed`, `nevents`) and the
+`rates.tsv` row (beam, `N`, `nevents`), and checks that they agree. It refuses to
+overwrite an output and prints, per sample:
+
+- events read and the number of channels per event;
+- rows written per channel;
+- rows not written and why.
+
+The 16 production samples take 239 s in total on one core and give 2.5 GB of
+fakerecon trees (8,287,467 rows).
+
+### Closure test (work-area report `reports/15_recon.md`)
+
+The test ran on all 16 samples, 32 (sample, channel) pairs.
+
+- **Row consistency.** Every row agrees with its flat-tree entry and with the
+  response: channel, bins, `SelEffWeight`, `POTWeight`, `SampleIndex`, and
+  `Enu_rec` inside `reco_bin`. The row count of each channel equals the matched
+  events with a non-empty column.
+- **Drawing.** The per-bin sum of `POTWeight x SelEffWeight` agrees with
+  `eff[i] x sum_k R[i,k] n_k`, with `n_k` taken from the events. All 32 have
+  p > 0.001; the smallest is 0.030, which over 32 tests is P = 0.62.
+- **Absolute rate.** The selected total agrees with the same folding of
+  POT x N_Ar x flux x spline cross section. MC/prediction is 0.990-1.020, all within
+  max(3 sigma, 2 %).
+
+### Open points
+
+- An event with an appearance and a disappearance channel is in two rows.
+- How GLoBES places a sampling point inside its true-energy interval is not
+  established (see "Open items" above). Here the true bin is the interval that
+  contains `Enu_true`.
+- True energies with an empty matrix column are lost.
+- The migration matrices and efficiencies come from the TDR simulation with GENIE
+  2.12, not AR23.
