@@ -741,3 +741,107 @@ The test ran on all 16 samples, 32 (sample, channel) pairs.
 - True energies with an empty matrix column are lost.
 - The migration matrices and efficiencies come from the TDR simulation with GENIE
   2.12, not AR23.
+
+## Selection files (`src/dune/SelectFD.C`, `scripts/dune/select.sh`)
+
+`scripts/dune/select.sh` writes what GUNDAM reads. It is the DUNE counterpart of
+`scripts/select.sh` + `src/FakeSelect.C` and of the HK oscillation grid; `src/FakeSelect.C`
+is HK-specific (ring samples) and is not used. It writes:
+
+| file | content |
+|---|---|
+| `$data_dir/fakeselect_FHC.root`, `$data_dir/fakeselect_RHC.root` | one tree `FakeSelect` (the HK tree name) per beam mode |
+| `$data_dir/parameters/oscProb/grid_DUNE.root` | `energyBinning`, the true-energy grid of the oscillation dial: `src/MakeOscGrid.C(<file>, 12000, 0.0, 120.0)`, 0.01 GeV bins up to 120 GeV, since the flux reaches 118 GeV |
+
+### Content
+
+The GLoBES selection is already in the fakerecon rows (one row per event and matched
+channel, `SelEffWeight` = post-smearing efficiency, see "Fake reconstruction").
+`SelectFD.C` therefore copies every row of the fakerecon files of one beam mode into
+`FakeSelect`, in manifest order:
+
+- no row is dropped;
+- no random number is drawn;
+- no oscillation weight is written.
+
+The inputs are the manifest rows whose name ends in `_fhc` / `_rhc`. The four samples
+are the GLoBES rules:
+
+| SampleIndex = EventType | rule | beam |
+|---|---|---|
+| 0 | `nue_app` | FHC |
+| 1 | `numu_dis` | FHC |
+| 2 | `nuebar_app` | RHC |
+| 3 | `numubar_dis` | RHC |
+
+The weight of a row before oscillation is `POTWeight x SelEffWeight`, in events at
+624 kt-MW-yr. GUNDAM applies the oscillation probability by a dial on `Enu_true`.
+
+### Branches
+
+| branch | meaning |
+|---|---|
+| `SampleIndex` (I) | the rule, as above. In the HK file `SampleIndex` is the input-file index; here that is `FileIndex` |
+| `EventType` (I) | the analysis sample, as HK `EventType` (HK selects samples with `EventType == k`); here equal to `SampleIndex`; the HK value -2 (not selected) does not occur |
+| `FileIndex` (I) | manifest row (0-15) of the source sample |
+| `isRHC` (O), `flux_pdg` (I), `PDGnu` (I), `cc` (B), `Enu_true` (F) | as in the fakerecon tree |
+| `Enu_rec` (F), `POTWeight` (D), `SelEffWeight` (D) | as in the fakerecon tree |
+| `ChannelIndex` (I), `reco_bin` (I), `true_bin` (I), `flat_entry` (L) | as in the fakerecon tree; `flat_entry` aligns rows with GHEP entries |
+
+`TNamed` objects record `beam`, `channels` (ChannelIndex, channel, rule, SampleIndex),
+`rules`, `manifest_rows` (FileIndex, rows, file), `weights` and `provenance`. The
+provenance holds the git commit and the sha256 of the macro, the script,
+`channels.tsv`, `rules.tsv` and every input file.
+
+### Choices
+
+- **nu_tau CC backgrounds** (`abs(PDGnu) == 16`, ChannelIndex 6, 7, 16, 17, 22, 23, 28,
+  29) are kept and are on by default. The TDR analysis (arXiv:2006.16043) includes them;
+  the GLoBES release does not, because its nu_tau cross sections are zero (see "nu_tau CC
+  backgrounds"). To compare with the GLoBES configuration, switch them off downstream
+  with a weight condition on `PDGnu`. Nothing is dropped here.
+- **Oscillation baseline and density:** 1284.9 km and 2.848 g/cm^3, from
+  `$lengthtab` and `$densitytab` in `tdr2017/globes_config/DUNE_GLoBES.glb:11-12`
+  (arXiv:2006.16043 quotes 1285 km). The GLoBES `@norm` corresponds to 1300 km, so the
+  GLoBES configuration's own rates are 1.0236 times the physical rate computed from the
+  same inputs (work-area report `reports/16_osc_rates.md`).
+
+### Running
+
+    source ~/genie_setup.sh
+    export working_dir=<repository> data_dir=<directory with the *_fakerecon.root files>
+    scripts/dune/select.sh
+
+The script:
+
+- refuses to overwrite any of the three outputs;
+- treats exit status 1 of `root -q` as success, as `scripts/genie/make_covariances.sh` does.
+
+For the AR23 production it takes 57 s.
+
+### Results (work-area report `reports/17_select.md`)
+
+| file | rows | size |
+|---|---|---|
+| `fakeselect_FHC.root` | 5,425,670 | 66 MB |
+| `fakeselect_RHC.root` | 2,861,797 | 35 MB |
+
+Together these are the 8,287,467 fakerecon rows.
+
+Checks:
+
+- **Nothing lost.** Rows and `sum POTWeight x SelEffWeight` per channel equal the
+  fakerecon files exactly.
+- **Oscillated rates.** With the oscillation applied per event (NO, delta_CP = 0,
+  arXiv:2103.04797 TABLE II), the per-channel and per-rule totals in 0.5-8 GeV equal the
+  step-16 calculation exactly, with and without nu_tau.
+- **Grid.** Taking the probability at the centre of the event's `grid_DUNE.root` bin
+  changes the rule totals by at most 2.1e-5 and any 0.125 GeV reconstructed bin in
+  0.5-8 GeV by at most 6.4e-4.
+
+### Not yet in these files
+
+- **Cross-section dials.** The GENIE Reweight response graphs for AR23 are not
+  included.
+- **Two rows per event.** An event with both an appearance and a disappearance channel
+  is in two rows, one in each rule, as in GLoBES.
