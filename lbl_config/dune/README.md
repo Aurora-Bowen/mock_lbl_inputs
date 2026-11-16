@@ -845,3 +845,45 @@ Checks:
   included.
 - **Two rows per event.** An event with both an appearance and a disappearance channel
   is in two rows, one in each rule, as in GLoBES.
+
+## Oscillation parameters (`src/dune/MakeOscCov.C`, `scripts/dune/make_covariances.sh`)
+
+`scripts/dune/make_covariances.sh` writes `$data_dir/parameters/oscProb/oscCovDUNE.root`.
+It contains `osc_param_names`, `osc_param_priors` and `osc_param_cov` (diagonal), the
+layout the GUNDAM configuration reads, like `oscCovHK.root` of `MakeOscCov` in
+`src/MakeCovariances.C`. The script refuses to overwrite the output.
+
+All values are from arXiv:2006.16043v2, Table 8 (p. 21), normal ordering. The relative
+uncertainty there is 1/6 of the 3 sigma range.
+
+| parameter | prior | sigma | from |
+|---|---|---|---|
+| PMNS_SIN_SQUARED_12 | 0.309815004 | 0.0125563842 | theta12 = 0.5903 rad, 2.3 % |
+| PMNS_SIN_SQUARED_13 | 0.0223317554 | 0.000664920465 | theta13 = 0.150 rad, 1.5 % |
+| PMNS_SIN_SQUARED_23 | 0.580253195 | 0.0350456577 | theta23 = 0.866 rad, 4.1 % |
+| PMNS_DELTA_MASS_SQUARED_21 | 7.39e-5 eV^2 | 2.0692e-6 | 2.8 % |
+| PMNS_DELTA_MASS_SQUARED_32 | 2.451e-3 eV^2 | 3.1863e-5 | 1.3 % |
+| PMNS_DELTA_CP | 0 | pi (placeholder) | Tables 6/7, NO column; no uncertainty given; Flat prior in GUNDAM |
+| PMNS_SIGN_MASS_SQUARED_32 | +1 | 0.1 | normal ordering; fixed in GUNDAM |
+
+- **sin^2 parameters.** prior = sin^2(theta) and
+  sigma(sin^2 theta) = sin(2 theta) x relative uncertainty x theta.
+- **Same values as the GLoBES release.** These are also the values of arXiv:2103.04797v2
+  TABLE II (p. 12), which its spectra (FIG. 4) use with delta_CP = 0.
+- **Matter density.** 2.848 g/cm^3 (Table 8, 2 %) is not a parameter here. The GUNDAM dials
+  use it fixed, with baseline 1284.9 km (`DUNE_GLoBES.glb:11-12`; arXiv:2006.16043 quotes
+  1285 km) and electron fraction 0.5.
+
+The GUNDAM configuration is `config_dune.yaml` in the `gundam_lbl_config` repository,
+branch `dune-fd`.
+
+**Check of the prefit spectra** (work-area report `reports/18_gundam.md`):
+
+- With NuOscillator v1.3.1 tabulated on `grid_DUNE.root`, GUNDAM reproduces the
+  oscillated rates of the selection files (NuFast per event, NO, delta_CP = 0). The
+  per-sample totals agree within 2e-5 and single bins within 1.2e-3 (0.5-8 GeV).
+- Against the TDR tables (arXiv:2006.16043 Tables 6 and 7, 336 kt-MW-yr, 0.5-10 GeV),
+  every non-nu_tau class equals within 1 % the product of two known factors:
+  - AR23 / GENIE 2.12;
+  - the GLoBES release against the TDR analysis (with the release's `@norm` factor
+    1.0236 removed).
