@@ -606,7 +606,11 @@ into the provenance string. The CC-list samples use the `CC` list of
 `config/EventGeneratorListAssembler.xml`, which contains QEL-CC-LAMBDA. The
 G00_00b `Default` list does not, so a G00_00b spline file for antineutrino
 probes also needs the `LambdaCCQE` splines (otherwise gevgen computes them on
-the fly and `gen.sh` stops). `dry_run=1 scripts/dune/gen.sh <sample>` prints
+the fly and `gen.sh` stops). For the same reason `rates.sh` runs gspl2root a second time
+with `--event-generator-list CC` for the probes of the CC-list samples, and
+`ExpectedRates.C` adds that file's QEL-CC-LAMBDA graphs to `tot_cc` of the
+CC-list samples when the Default list has none (G00_00b; for AR23 nothing is
+added). The table header records the CC-list processes and where Λ was added. `dry_run=1 scripts/dune/gen.sh <sample>` prints
 the gevgen command without running it.
 
 ### Pilot results

@@ -13,6 +13,13 @@
 // histogram:
 //   N_cc = POT * N_Ar * sum_i Phi_i * 1e-4 * tot_cc(E_i) * 1e-38   (probe flavour)
 //   N_nc = same with tot_nc for Default samples, 0 for CC samples;  N = N_cc + N_nc
+// CC-list samples count every process of the gevgen CC list. tot_cc of the tune's Default
+// list holds all of them except QEL-CC-LAMBDA when the Default list lacks it (G00_00b), so
+//   N_cc(CC list) = N_cc(tot_cc) + N(QEL-CC-LAMBDA graphs qel_cc_*_strange* of
+//                   xsec_dir/xsec_<flavour>_CC.root, gspl2root --event-generator-list CC),
+// the second term only if the Default file has no qel_cc_*_strange* graph (AR23 has them:
+// nothing is added). Check: tot_cc(CC list) + imd_cc + imdanh_cc (electron-target CC, in
+// tot_cc of Default, not in the CC list) = tot_cc(Default) + added, within 1e-6 per sample.
 //   nevents = max(100000, 20 N rounded up to the next multiple of 10000)
 // tot_cc/tot_nc are evaluated with TGraph::Eval (linear interpolation).
 //
@@ -31,7 +38,8 @@
 // ve_ccncmix (nu-e elastic of nue/nuebar, in neither tot_cc nor tot_nc).
 //
 // Usage: ExpectedRates(xsec_dir, flux_dir, response, out_tsv, spline, spline_sha256, tune,
-//                      git_commit, code_sha256)  -> 0 ok, 1 check failed, 2 I/O error.
+//                      git_commit, code_sha256, cc_list_desc)  -> 0 ok, 1 check failed, 2 I/O error.
+//        cc_list_desc: the processes of the CC list (from rates.sh), recorded in the header.
 
 #include "TFile.h"
 #include "TH1D.h"
@@ -42,6 +50,7 @@
 #include <cmath>
 #include <cstdio>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -102,11 +111,25 @@ double Fold212(const TH1D *h, const TGraph *g)
   return s;
 }
 
+// sum_i Phi_i * sum of the QEL-CC-LAMBDA graphs (qel_cc_<p|n>_strange<pdg>) of directory d;
+// nstrange = number of such graphs
+double FoldStrange(const TH1D *h, TDirectory *d, int &nstrange)
+{
+  nstrange = 0; double s = 0.;
+  for (TObject *o : *d->GetListOfKeys()) {
+    std::string n = o->GetName();
+    if (n.rfind("qel_cc_", 0) != 0 || n.find("_strange") == std::string::npos) continue;
+    ++nstrange; s += Fold(h, dynamic_cast<TGraph *>(d->Get(n.c_str())));
+  }
+  return s;
+}
+
 } // namespace
 
 int ExpectedRates(const char *xsec_dir, const char *flux_dir, const char *response,
                   const char *out_tsv, const char *spline, const char *spline_sha,
-                  const char *tune, const char *git_commit, const char *code_sha)
+                  const char *tune, const char *git_commit, const char *code_sha,
+                  const char *cc_list_desc = "")
 {
   // exposure
   const double kYears = 6.5, kPowerE20 = 11.0, kMassKt = 40., kMW = 1.2;
@@ -142,6 +165,20 @@ int ExpectedRates(const char *xsec_dir, const char *flux_dir, const char *respon
            xs[p]["ve_nc"] ? " ve_nc" : "", xs[p]["ve_ccncmix"] ? " ve_ccncmix" : "");
   }
 
+  // other generator lists: xsec_<flavour>_CC.root for the CC-list probes
+  std::map<int, TDirectory *> xsdef, xscc;
+  for (size_t i = 0; i < 6; ++i) {
+    const int p = pdgs[i];
+    xsdef[p] = OnlyDir(*keep[i]);
+    std::string path = Form("%s/xsec_%s_CC.root", xsec_dir, FlavourOf(p));
+    if (gSystem->AccessPathName(path.c_str())) continue;
+    TFile *f = TFile::Open(path.c_str(), "READ");
+    if (!f || f->IsZombie()) { printf("ERROR: cannot open %s\n", path.c_str()); return 2; }
+    keep.push_back(f);
+    xscc[p] = OnlyDir(*f);
+    if (!xscc[p] || !xscc[p]->Get("tot_cc")) { printf("ERROR: %s: no single directory with tot_cc\n", path.c_str()); return 2; }
+  }
+
   // flux
   std::map<std::string, TFile *> fflux;
   fflux["fhc"] = TFile::Open(Form("%s/flux_dune_neutrino_FD_uniform.root", flux_dir), "READ");
@@ -168,6 +205,7 @@ int ExpectedRates(const char *xsec_dir, const char *flux_dir, const char *respon
   }
 
   struct Row { Sample s; double ncc, nnc, n; long nev; };
+  std::set<int> lam_added, lam_in_default;
   std::vector<Row> rows;
   int nfail = 0;
   long nev_sum = 0;
@@ -180,7 +218,24 @@ int ExpectedRates(const char *xsec_dir, const char *flux_dir, const char *respon
       return 2;
     }
     auto &g = xs[s.pdg];
-    const double ncc = kNorm * Fold(h, g["tot_cc"]);
+    double ncc = kNorm * Fold(h, g["tot_cc"]), nlam = 0.;
+    if (s.list == "CC") {
+      if (!xscc.count(s.pdg)) { printf("ERROR: %s: xsec_%s_CC.root missing\n", s.name.c_str(), FlavourOf(s.pdg)); return 2; }
+      int ndef = 0, ncl = 0;
+      const double lam_def = kNorm * FoldStrange(h, xsdef[s.pdg], ndef);
+      const double lam_cc = kNorm * FoldStrange(h, xscc[s.pdg], ncl);
+      if (ndef == 0) { nlam = lam_cc; if (ncl) lam_added.insert(s.pdg); }
+      else lam_in_default.insert(s.pdg);
+      const double ncclist = kNorm * Fold(h, dynamic_cast<TGraph *>(xscc[s.pdg]->Get("tot_cc")));
+      const double nimd = kNorm * (Fold(h, g["imd_cc"]) + Fold(h, g["imdanh_cc"]));
+      const double rel = (ncclist + nimd - (ncc + nlam)) / ncc;
+      printf("CC-LIST %-24s tot_cc(Default) %.6e  tot_cc(CC list) %.6e  imd+imdanh %.4e  Lambda graphs: Default %d (%.4e), CC list %d (%.4e)  added %.6e (%.4f %%)  "
+             "check (CClist + imd - Default - added)/Default = %.2e -> %s\n",
+             s.name.c_str(), ncc, ncclist, nimd, ndef, lam_def, ncl, lam_cc, nlam, 100. * nlam / ncc, rel,
+             std::fabs(rel) < 1e-6 ? "PASS" : "FAIL");
+      if (std::fabs(rel) >= 1e-6) { printf("CHECK FAIL: %s: CC-list sum not reproduced\n", s.name.c_str()); ++nfail; }
+      ncc += nlam;
+    }
     const double nnc = (s.list == "Default") ? kNorm * Fold(h, g["tot_nc"]) : 0.;
     const double n = ncc + nnc;
     long nev = (long)std::ceil(20. * n / 10000.) * 10000;
@@ -239,6 +294,12 @@ int ExpectedRates(const char *xsec_dir, const char *flux_dir, const char *respon
   fprintf(out, "# splines: %s sha256 %s; tune %s; gspl2root tot_cc / tot_nc for Ar40\n", spline, spline_sha, tune);
   fprintf(out, "# flux: lbl_config/dune/tdr2017/flux/<flux_file> (0.125 GeV bins), parent-flavour histogram <flux_hist>\n");
   fprintf(out, "# N_cc = POT * N_Ar * sum_i Phi_i * 1e-4 * tot_cc(E_i) * 1e-38; N_nc same with tot_nc (Default list only, else 0); N = N_cc + N_nc\n");
+  std::string added, indef;
+  for (int p : lam_added) added += Form(" %d", p);
+  for (int p : lam_in_default) indef += Form(" %d", p);
+  fprintf(out, "# CC-list samples (%s): N_cc = tot_cc of the Default list + QEL-CC-LAMBDA (qel_cc_*_strange* of gspl2root --event-generator-list CC) where the Default list has none; "
+               "added for probe(s):%s; already in tot_cc for probe(s):%s. tot_cc also holds IMD/IMD-ANH (not in the CC list)\n",
+          cc_list_desc, added.empty() ? " none" : added.c_str(), indef.empty() ? " none" : indef.c_str());
   fprintf(out, "# nevents = max(100000, 20 * N rounded up to the next multiple of 10000)\n");
   fprintf(out, "sample\tbeam\tflux_file\tflux_hist\tprobe_pdg\tlist\tN_cc\tN_nc\tN\tnevents\n");
   for (const Row &r : rows)

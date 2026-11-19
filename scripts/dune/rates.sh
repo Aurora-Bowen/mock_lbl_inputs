@@ -1,6 +1,8 @@
 #!/bin/bash
 # Expected DUNE far-detector interactions per sample and events to generate:
-#   1. gspl2root for Ar40 and each of the six flavours -> OUTDIR/xsec_<flavour>.root (+ .log)
+#   1. gspl2root for Ar40 and each of the six flavours -> OUTDIR/xsec_<flavour>.root (+ .log);
+#      for every probe of a sample with another generator list in gen/dune/samples.txt
+#      (the CC list) also gspl2root --event-generator-list <list> -> OUTDIR/xsec_<flavour>_<list>.root
 #   2. unit check: numu tot_cc(10 GeV) / 10 / 40 in [0.6, 0.8] (1e-38 cm^2/GeV/nucleon)
 #   3. src/dune/ExpectedRates.C -> gen/dune/rates.tsv, its output in OUTDIR/rates.log
 # Run from the repository root with GENIE and ROOT set up (source ~/genie_setup.sh):
@@ -11,8 +13,8 @@
 #   -d  directory for the gspl2root files and logs (created if missing)
 #   -s  stage: all (default), xsec (steps 1-2), rates (steps 2-3, needs the xsec files)
 #
-# Every output must be new: the xsec stage refuses to run if any xsec_<flavour>.root or
-# .log exists (gspl2root opens an existing file in UPDATE mode), the rates stage if
+# Every output must be new: the xsec stage refuses to run if any xsec_<flavour>[_<list>].root
+# or .log exists (gspl2root opens an existing file in UPDATE mode), the rates stage if
 # gen/dune/rates.tsv or OUTDIR/rates.log exists. gspl2root reads the full spline file;
 # run the xsec stage on a compute node (inside a Slurm allocation; it refuses otherwise
 # unless ALLOW_NO_SLURM=1).
@@ -27,6 +29,7 @@ TARGET=1000180400
 EMIN_EMAX=0.01,120
 OUT_TSV=${rates_file:-gen/dune/rates.tsv}
 FLAVOURS=(nue:12 nuebar:-12 numu:14 numubar:-14 nutau:16 nutaubar:-16)
+MANIFEST=gen/dune/samples.txt
 
 usage() { sed -n '7,11p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 SPL=""; OUTDIR=""; STAGE=all
@@ -38,6 +41,20 @@ case "$STAGE" in all|xsec|rates) ;; *) usage ;; esac
 [ -f src/dune/ExpectedRates.C ] || { echo "run from the repository root"; exit 2; }
 command -v root >/dev/null || { echo "root not on PATH"; exit 2; }
 [ -s "$SPL" ] || { echo "ERROR: spline file $SPL missing"; exit 2; }
+[ -s "$MANIFEST" ] || { echo "ERROR: $MANIFEST missing"; exit 2; }
+fname() { case $1 in 12) echo nue;; -12) echo nuebar;; 14) echo numu;; -14) echo numubar;; 16) echo nutau;; -16) echo nutaubar;; esac; }
+# probe:list pairs of the samples whose generator list is not Default (manifest fields 3 and 11)
+EXTRA=($(awk -F'|' '!/^[[:space:]]*#/ && NF >= 11 { gsub(/[[:space:]]/, "", $3); gsub(/[[:space:]]/, "", $11); if ($11 != "Default") print $3 ":" $11 }' "$MANIFEST" | sort -u))
+for e in "${EXTRA[@]}"; do [ -n "$(fname ${e%%:*})" ] || { echo "ERROR: $MANIFEST: unknown probe ${e%%:*}"; exit 2; }; done
+# generator lists of those samples, as assembled by GENIE (tune directory first, then config/)
+TUNE_DIR=${TUNE%_*_*}
+LISTS_DESC=""
+for l in $(printf '%s\n' "${EXTRA[@]}" | cut -d: -f2 | sort -u); do
+  ASM=$GENIE/config/$TUNE_DIR/EventGeneratorListAssembler.xml; [ -s "$ASM" ] || ASM=$GENIE/config/EventGeneratorListAssembler.xml
+  procs=$(sed -n "/<param_set name=\"$l\">/,/<\/param_set>/p" "$ASM" | sed -n 's/.*genie::EventGenerator\/\([^ <]*\).*/\1/p' | tr '\n' ' ' | sed 's/ $//')
+  [ -n "$procs" ] || { echo "ERROR: generator list $l not found in $ASM"; exit 2; }
+  LISTS_DESC="$LISTS_DESC${LISTS_DESC:+; }$l = $procs (${ASM#$GENIE/})"
+done
 mkdir -p "$OUTDIR" || exit 2
 OUTDIR=$(cd "$OUTDIR" && pwd)
 
@@ -47,6 +64,8 @@ echo "splines    : $SPL"
 echo "tune       : $TUNE   target: $TARGET   energy: $EMIN_EMAX GeV (log steps)"
 echo "outdir     : $OUTDIR"
 echo "rates file : $OUT_TSV"
+echo "other lists: ${EXTRA[*]:-none} (probe:list from $MANIFEST)"
+echo "             ${LISTS_DESC:-}"
 
 unit_check() {
   local v
@@ -66,6 +85,11 @@ if [ "$STAGE" = all ] || [ "$STAGE" = xsec ]; then
       [ -e "$x" ] && { echo "ERROR: $x exists; move it away first"; exit 2; }
     done
   done
+  for e in "${EXTRA[@]}"; do
+    for x in "$OUTDIR/xsec_$(fname ${e%%:*})_${e##*:}.root" "$OUTDIR/xsec_$(fname ${e%%:*})_${e##*:}.log"; do
+      [ -e "$x" ] && { echo "ERROR: $x exists; move it away first"; exit 2; }
+    done
+  done
   echo "spline sha256: $(sha256sum "$SPL" | cut -d' ' -f1)"
   for fp in "${FLAVOURS[@]}"; do
     f=${fp%%:*}; p=${fp##*:}
@@ -76,6 +100,18 @@ if [ "$STAGE" = all ] || [ "$STAGE" = xsec ]; then
     ncreate=$(grep -c 'Creating cross section spline' "$OUTDIR/xsec_$f.log")
     nnospl=$(grep -c 'No splines loaded for tune' "$OUTDIR/xsec_$f.log")
     echo "gspl2root $f ($p): exit $rc, $(( $(date +%s) - t0 )) s, ERROR/FATAL lines $nerr, 'Creating cross section spline' $ncreate, 'No splines loaded' $nnospl"
+    [ $rc -eq 0 ] && [ -s "$OUTDIR/xsec_$f.root" ] || { echo "ERROR: gspl2root failed for $f"; exit 2; }
+    [ "$ncreate" -eq 0 ] && [ "$nnospl" -eq 0 ] || { echo "CHECK FAIL: splines missing for $f"; exit 1; }
+  done
+  for e in "${EXTRA[@]}"; do
+    p=${e%%:*}; l=${e##*:}; f=$(fname $p)_$l
+    t0=$(date +%s)
+    gspl2root -f "$SPL" -p "$p" -t $TARGET --tune $TUNE --event-generator-list $l -e $EMIN_EMAX -l -o "$OUTDIR/xsec_$f.root" > "$OUTDIR/xsec_$f.log" 2>&1
+    rc=$?
+    nerr=$(grep -c -E ' (FATAL|ERROR) ' "$OUTDIR/xsec_$f.log")
+    ncreate=$(grep -c 'Creating cross section spline' "$OUTDIR/xsec_$f.log")
+    nnospl=$(grep -c 'No splines loaded for tune' "$OUTDIR/xsec_$f.log")
+    echo "gspl2root $f ($p, list $l): exit $rc, $(( $(date +%s) - t0 )) s, ERROR/FATAL lines $nerr, 'Creating cross section spline' $ncreate, 'No splines loaded' $nnospl"
     [ $rc -eq 0 ] && [ -s "$OUTDIR/xsec_$f.root" ] || { echo "ERROR: gspl2root failed for $f"; exit 2; }
     [ "$ncreate" -eq 0 ] && [ "$nnospl" -eq 0 ] || { echo "CHECK FAIL: splines missing for $f"; exit 1; }
   done
@@ -94,7 +130,7 @@ if [ "$STAGE" = all ] || [ "$STAGE" = rates ]; then
   root -l -b -q \
     -e "gSystem->SetBuildDir(\"$BUILD_DIR\", true);" \
     -e '.L src/dune/ExpectedRates.C+' \
-    -e "int rc = ExpectedRates(\"$OUTDIR\", \"lbl_config/dune/tdr2017/flux\", \"lbl_config/dune/tdr2017/tdr2017_response.root\", \"$OUT_TSV\", \"$SPL\", \"$SHA\", \"$TUNE\", \"$(git rev-parse --short HEAD)\", \"$CODE\"); gSystem->Exit(rc);" \
+    -e "int rc = ExpectedRates(\"$OUTDIR\", \"lbl_config/dune/tdr2017/flux\", \"lbl_config/dune/tdr2017/tdr2017_response.root\", \"$OUT_TSV\", \"$SPL\", \"$SHA\", \"$TUNE\", \"$(git rev-parse --short HEAD)\", \"$CODE\", \"$LISTS_DESC\"); gSystem->Exit(rc);" \
     2>&1 | tee "$OUTDIR/rates.log"
   rc=$?
   echo "ExpectedRates exit status: $rc"
