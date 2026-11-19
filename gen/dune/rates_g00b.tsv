@@ -1,0 +1,26 @@
+# DUNE FD expected interactions per sample (before oscillation, efficiency, smearing) and events to generate.
+# Written by scripts/dune/rates.sh (src/dune/ExpectedRates.C); git HEAD at run time 95a9e62; sha256 rates.sh efc161d6239d, ExpectedRates.C d8d3bb10c31b
+# POT = 7.15e+21 per beam mode (NUTIME = NUBARTIME = 6.5 yr, definitions.inc:3-4; @power = 11.0e20 POT/yr at 1.2 MW, flux/Beam.inc:20,27)
+# N_Ar40 = 6.027809e+32 (LAMASS = 40 kt, definitions.inc:5; 40e9 g * 6.02214076e23 / 39.9623831 g/mol)
+# exposure = 624 kt-MW-yr (40 kt x 1.2 MW x (6.5 + 6.5) yr)
+# splines: /storage/shared/xtao/dune_repo_work/data/xsec/g00b/g00b_ar40.xml sha256 140e664ea74649cb27c75c4f728c3015e79db8105e3092318ccb66fb02b1d4f2; tune G00_00b_00_000; gspl2root tot_cc / tot_nc for Ar40
+# flux: lbl_config/dune/tdr2017/flux/<flux_file> (0.125 GeV bins), parent-flavour histogram <flux_hist>
+# N_cc = POT * N_Ar * sum_i Phi_i * 1e-4 * tot_cc(E_i) * 1e-38; N_nc same with tot_nc (Default list only, else 0); N = N_cc + N_nc
+# nevents = max(100000, 20 * N rounded up to the next multiple of 10000)
+sample	beam	flux_file	flux_hist	probe_pdg	list	N_cc	N_nc	N	nevents
+numu_x_numu_fhc	fhc	flux_dune_neutrino_FD_uniform.root	numu_flux	14	Default	6.423413e+04	2.059158e+04	8.482571e+04	1700000
+numubar_x_numubar_fhc	fhc	flux_dune_neutrino_FD_uniform.root	numubar_flux	-14	Default	2.910242e+03	1.184382e+03	4.094625e+03	100000
+nue_x_nue_fhc	fhc	flux_dune_neutrino_FD_uniform.root	nue_flux	12	Default	9.578198e+02	2.994874e+02	1.257307e+03	100000
+nuebar_x_nuebar_fhc	fhc	flux_dune_neutrino_FD_uniform.root	nuebar_flux	-12	Default	1.438025e+02	5.649946e+01	2.003020e+02	100000
+numu_x_nue_fhc	fhc	flux_dune_neutrino_FD_uniform.root	numu_flux	12	CC	6.513921e+04	0.000000e+00	6.513921e+04	1310000
+numubar_x_nuebar_fhc	fhc	flux_dune_neutrino_FD_uniform.root	numubar_flux	-12	CC	2.934813e+03	0.000000e+00	2.934813e+03	100000
+numu_x_nutau_fhc	fhc	flux_dune_neutrino_FD_uniform.root	numu_flux	16	CC	5.355321e+03	0.000000e+00	5.355321e+03	110000
+numubar_x_nutaubar_fhc	fhc	flux_dune_neutrino_FD_uniform.root	numubar_flux	-16	CC	6.685577e+02	0.000000e+00	6.685577e+02	100000
+numu_x_numu_rhc	rhc	flux_dune_antineutrino_FD_uniform.root	numu_flux	14	Default	1.136592e+04	3.561639e+03	1.492756e+04	300000
+numubar_x_numubar_rhc	rhc	flux_dune_antineutrino_FD_uniform.root	numubar_flux	-14	Default	2.013176e+04	8.667338e+03	2.879910e+04	580000
+nue_x_nue_rhc	rhc	flux_dune_antineutrino_FD_uniform.root	nue_flux	12	Default	4.763793e+02	1.476715e+02	6.240508e+02	100000
+nuebar_x_nuebar_rhc	rhc	flux_dune_antineutrino_FD_uniform.root	nuebar_flux	-12	Default	2.792869e+02	1.132689e+02	3.925558e+02	100000
+numu_x_nue_rhc	rhc	flux_dune_antineutrino_FD_uniform.root	numu_flux	12	CC	1.146278e+04	0.000000e+00	1.146278e+04	230000
+numubar_x_nuebar_rhc	rhc	flux_dune_antineutrino_FD_uniform.root	numubar_flux	-12	CC	2.037420e+04	0.000000e+00	2.037420e+04	410000
+numu_x_nutau_rhc	rhc	flux_dune_antineutrino_FD_uniform.root	numu_flux	16	CC	3.134292e+03	0.000000e+00	3.134292e+03	100000
+numubar_x_nutaubar_rhc	rhc	flux_dune_antineutrino_FD_uniform.root	numubar_flux	-16	CC	1.204411e+03	0.000000e+00	1.204411e+03	100000
