@@ -12,6 +12,11 @@
 # Per sample it reads the manifest row (gen/dune/samples.txt: stem, flux_pdg, seed,
 # nevents) and the rates.tsv row (beam, N, nevents), and passes them to the macro.
 # The random seed is the manifest seed, so the same input gives the same output.
+# Environment (optional): rates_file = the table N is read from (default gen/dune/rates.tsv).
+# With the default table the manifest and table nevents must agree, as before; with another
+# table (e.g. gen/dune/rates_g00b.tsv for tune G00_00b_00_000) only probe pdg and generator
+# list must agree, and nevents is always the manifest count (the events actually generated).
+# The table, its sha256 and the tune named in its header are written into the provenance.
 # Existing outputs are never overwritten: the script exits with an error if the
 # fakerecon file exists.
 
@@ -23,7 +28,7 @@ cd "$working_dir"
 command -v root >/dev/null || { echo "[ERROR] root not on PATH (source ~/genie_setup.sh)"; exit 1; }
 
 MANIFEST=gen/dune/samples.txt
-RATES=gen/dune/rates.tsv
+RATES=${rates_file:-gen/dune/rates.tsv}
 RESPONSE=lbl_config/dune/tdr2017/tdr2017_response.root
 CHANNELS=lbl_config/dune/tdr2017/channels.tsv
 RULES=lbl_config/dune/tdr2017/rules.tsv
@@ -51,7 +56,9 @@ PROV="$PROV sha256 $MACRO $(sha256sum "$MACRO" | cut -c1-64);"
 PROV="$PROV sha256 scripts/dune/recon.sh $(sha256sum scripts/dune/recon.sh | cut -c1-64);"
 PROV="$PROV sha256 $RESPONSE $(sha256sum "$RESPONSE" | cut -c1-64);"
 PROV="$PROV sha256 $CHANNELS $(sha256sum "$CHANNELS" | cut -c1-64);"
-PROV="$PROV sha256 $RULES $(sha256sum "$RULES" | cut -c1-64)"
+PROV="$PROV sha256 $RULES $(sha256sum "$RULES" | cut -c1-64);"
+RATES_TUNE=$(sed -n 's/^# splines: .*; tune \([^;]*\);.*/\1/p' "$RATES" | head -1)
+PROV="$PROV rates file $RATES sha256 $(sha256sum "$RATES" | cut -c1-64) (tune ${RATES_TUNE:-not found in header})"
 
 echo
 echo "============================================================"
@@ -74,8 +81,13 @@ for row in "${SEL[@]}"; do
   RROW=$(awk -F'\t' -v s="$NAME" '!/^#/ && $1 == s' "$RATES")
   [ -n "$RROW" ] || { echo "[ERROR] $NAME not in $RATES"; exit 1; }
   IFS=$'\t' read -r _ R_BEAM _ _ R_PDG R_LIST _ _ R_N R_NEV <<< "$RROW"
-  [ "$R_NEV" = "$NEVENTS" ] && [ "$R_PDG" = "$PDG" ] && [ "$R_LIST" = "$LIST" ] || {
-    echo "[ERROR] $NAME: manifest (nevents $NEVENTS, pdg $PDG, list $LIST) and $RATES ($R_NEV, $R_PDG, $R_LIST) differ"; exit 1; }
+  if [ -z "${rates_file:-}" ]; then
+    [ "$R_NEV" = "$NEVENTS" ] && [ "$R_PDG" = "$PDG" ] && [ "$R_LIST" = "$LIST" ] || {
+      echo "[ERROR] $NAME: manifest (nevents $NEVENTS, pdg $PDG, list $LIST) and $RATES ($R_NEV, $R_PDG, $R_LIST) differ"; exit 1; }
+  else
+    [ "$R_PDG" = "$PDG" ] && [ "$R_LIST" = "$LIST" ] || {
+      echo "[ERROR] $NAME: manifest (pdg $PDG, list $LIST) and $RATES ($R_PDG, $R_LIST) differ"; exit 1; }
+  fi
   BEAM=$(echo "$R_BEAM" | tr a-z A-Z)
 
   IN="$data_dir/${STEM}_flattree.root"

@@ -581,6 +581,34 @@ flux-averaged cross section (work-area report `reports/11_pilot.md`).
 One sample per Slurm task; the production array is kept with the work area
 (`jobs/gen_fd_ar23.sbatch`), which records the environment lines.
 
+### Selecting the GENIE tune
+
+The production tune is AR23_20i_00_000. Two optional environment variables
+select another tune; when they are unset nothing changes:
+
+| variable | read by | default |
+|---|---|---|
+| `genie_tune` | `scripts/dune/rates.sh` (gspl2root, recorded in the table header), `scripts/dune/gen.sh` (gevgen `--tune`) | `AR23_20i_00_000` |
+| `rates_file` | `scripts/dune/rates.sh` (output table), `scripts/dune/recon.sh` (N per sample) | `gen/dune/rates.tsv` |
+
+`xsec_file` must then hold splines of that tune. Example, the GENIE v2.12-like
+`G00_00b_00_000` ("Default+MEC" historic tune in `config/G00_00b`):
+
+    genie_tune=G00_00b_00_000 rates_file=gen/dune/rates_g00b.tsv \
+      scripts/dune/rates.sh -x <g00b_ar40.xml> -d <dir>
+    genie_tune=G00_00b_00_000 xsec_file=<g00b_ar40.xml> scripts/dune/gen.sh <sample>
+    rates_file=gen/dune/rates_g00b.tsv scripts/dune/recon.sh <sample>
+
+With a non-default `rates_file`, `recon.sh` takes N from that table and the
+generated event count from the manifest (only probe and list must agree), so
+the manifest `nevents` serve every tune; the table, its sha256 and its tune go
+into the provenance string. The CC-list samples use the `CC` list of
+`config/EventGeneratorListAssembler.xml`, which contains QEL-CC-LAMBDA. The
+G00_00b `Default` list does not, so a G00_00b spline file for antineutrino
+probes also needs the `LambdaCCQE` splines (otherwise gevgen computes them on
+the fly and `gen.sh` stops). `dry_run=1 scripts/dune/gen.sh <sample>` prints
+the gevgen command without running it.
+
 ### Pilot results
 
 10000 events each of `numu_x_numu_fhc` and `numu_x_nutau_fhc`, one Slurm task

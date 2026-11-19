@@ -16,13 +16,16 @@
 # gen/dune/rates.tsv or OUTDIR/rates.log exists. gspl2root reads the full spline file;
 # run the xsec stage on a compute node (inside a Slurm allocation; it refuses otherwise
 # unless ALLOW_NO_SLURM=1).
+# Environment (both optional; unset = the AR23 production defaults):
+#   genie_tune   GENIE tune passed to gspl2root and recorded in the output  default AR23_20i_00_000
+#   rates_file   output table, relative to the repository root               default gen/dune/rates.tsv
 # Exit status: 0 = done, 1 = a check failed, 2 = setup or I/O error.
 
 set -o pipefail
-TUNE=AR23_20i_00_000
+TUNE=${genie_tune:-AR23_20i_00_000}
 TARGET=1000180400
 EMIN_EMAX=0.01,120
-OUT_TSV=gen/dune/rates.tsv
+OUT_TSV=${rates_file:-gen/dune/rates.tsv}
 FLAVOURS=(nue:12 nuebar:-12 numu:14 numubar:-14 nutau:16 nutaubar:-16)
 
 usage() { sed -n '7,11p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
@@ -43,6 +46,7 @@ echo "git HEAD   : $(git rev-parse HEAD)  (modified tracked files: $(git status 
 echo "splines    : $SPL"
 echo "tune       : $TUNE   target: $TARGET   energy: $EMIN_EMAX GeV (log steps)"
 echo "outdir     : $OUTDIR"
+echo "rates file : $OUT_TSV"
 
 unit_check() {
   local v

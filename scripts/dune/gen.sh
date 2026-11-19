@@ -14,6 +14,10 @@
 # script exits with an error if any of them exists.
 # After gevgen it checks that the GHEP tree gtree has exactly the requested number of
 # entries and that no cross-section spline was computed on the fly.
+# Environment (optional): genie_tune = GENIE tune passed to gevgen (default AR23_20i_00_000;
+# the spline file in $xsec_file must hold that tune); dry_run=1 prints, for each selected
+# sample, the gevgen command one argument per line (lines "GEVGEN_ARG <i> <arg>") and exits
+# without creating or checking any output.
 set -o pipefail
 
 [ -n "$working_dir" ] || { echo "working_dir is not set"; exit 1; }
@@ -27,7 +31,7 @@ command -v root >/dev/null || { echo "root not on PATH"; exit 1; }
 MANIFEST=gen/dune/samples.txt
 MSG="$working_dir/gen/genie/Messenger_production.xml"   # the HK Messenger file, reused
 TARGET="1000180400"
-TUNE="AR23_20i_00_000"
+TUNE="${genie_tune:-AR23_20i_00_000}"
 EMIN_EMAX="0,120"
 
 # Manifest rows without comments and blanks; $1 picks one by name or index.
@@ -57,6 +61,26 @@ for row in "${SEL[@]}"; do
   OUT="$RUNDIR/${NAME}.ghep.root"
   LOG="$RUNDIR/${NAME}.gevgen.log"
   INFLUX="$RUNDIR/input-flux.root"
+
+  GEVGEN_CMD=(gevgen
+    -r "$RUN"
+    -n "$NEVENTS"
+    -e "$EMIN_EMAX"
+    -p "$PDG"
+    -t "$TARGET"
+    -f "$FLUX,$HIST,NOWIDTH"
+    -F 0,0,1,0,0,0,0
+    -o "$OUT"
+    --seed "$SEED"
+    --cross-sections "$xsec_file"
+    --tune "$TUNE"
+    --event-generator-list "$LIST"
+    --message-thresholds "$MSG")
+  if [ "${dry_run:-0}" = 1 ]; then
+    echo "GEVGEN_SAMPLE $NAME"
+    for i in "${!GEVGEN_CMD[@]}"; do echo "GEVGEN_ARG $i ${GEVGEN_CMD[$i]}"; done
+    continue
+  fi
 
   mkdir -p "$RUNDIR" || exit 1
   for f in "$OUT" "$LOG" "$INFLUX"; do
@@ -91,20 +115,7 @@ for row in "${SEL[@]}"; do
 
   start_seconds=$(date +%s)
 
-  gevgen \
-    -r "$RUN" \
-    -n "$NEVENTS" \
-    -e "$EMIN_EMAX" \
-    -p "$PDG" \
-    -t "$TARGET" \
-    -f "$FLUX,$HIST,NOWIDTH" \
-    -F 0,0,1,0,0,0,0 \
-    -o "$OUT" \
-    --seed "$SEED" \
-    --cross-sections "$xsec_file" \
-    --tune "$TUNE" \
-    --event-generator-list "$LIST" \
-    --message-thresholds "$MSG" 2>&1 | tee "$LOG"
+  "${GEVGEN_CMD[@]}" 2>&1 | tee "$LOG"
 
   status=${PIPESTATUS[0]}
 
